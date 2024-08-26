@@ -1,0 +1,61 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION = 'us-east-1'
+        S3_BUCKET = 'noreshstatebucket'  // Your actual S3 bucket
+    }
+
+    stages {
+        stage('Checkout Infrastructure Code') {
+            steps {
+                git 'https://github.com/noreshbatchu/myassignmentrepo.git'
+            }
+        }
+
+        stage('Initialize Terraform') {
+            steps {
+                withAWS(region: "${AWS_REGION}", credentials: 'aws-credentials') {
+                    dir('terraform') {
+                        sh '''
+                        terraform init \
+                        -backend-config="bucket=${S3_BUCKET}" \
+                        -backend-config="key=state/terraform.tfstate" \
+                        -backend-config="region=${AWS_REGION}" \
+                        -backend-config="encrypt=true"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Plan Infrastructure') {
+            steps {
+                withAWS(region: "${AWS_REGION}", credentials: 'aws-credentials') {
+                    dir('terraform') {
+                        sh 'terraform plan -out=plan.tfplan'
+                    }
+                }
+            }
+        }
+
+        stage('Apply Infrastructure') {
+            steps {
+                withAWS(region: "${AWS_REGION}", credentials: 'aws-credentials') {
+                    dir('terraform') {
+                        sh 'terraform apply -auto-approve plan.tfplan'
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Infrastructure provisioning successful!'
+        }
+        failure {
+            echo 'Infrastructure provisioning failed!'
+        }
+    }
+}
